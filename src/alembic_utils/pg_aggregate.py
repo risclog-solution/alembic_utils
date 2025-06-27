@@ -1,36 +1,23 @@
 # pylint: disable=unused-argument,invalid-name,line-too-long
-from typing import List, Generator, Optional, Any
 import re
+from typing import Any, Generator, List, Optional
+
 from parse import parse
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import TextClause
 
-try: # pragma: no cover
-    from alembic_utils.exceptions import SQLParseFailure
-    from alembic_utils.replaceable_entity import ReplaceableEntity
-    from alembic_utils.statement import (
-        normalize_whitespace,
-    )
-except ImportError: # pragma: no cover
+from alembic_utils.exceptions import SQLParseFailure
+from alembic_utils.replaceable_entity import ReplaceableEntity
+from alembic_utils.statement import normalize_whitespace
 
-    class SQLParseFailure(Exception):
-        pass
-
-    class ReplaceableEntity:
-        def __init__(self, schema: str, signature: str, definition: str):
-            self.schema = schema
-            self.signature = signature
-            self.definition = definition
-
-    def escape_colon_for_sql(text: str) -> str:
-        return text
-
-    def normalize_whitespace(text: str) -> str:
-        return re.sub(r"\s+", " ", text.strip())
-
-    def strip_terminating_semicolon(text: str) -> str:
-        return text.rstrip(";").strip()
-
+__all__ = [
+    "PGAggregate",
+    "pg_aggregate_from_definition",
+    "SQLParseFailure",
+    "ReplaceableEntity",
+    "normalize_whitespace",
+]
 
 # PG built-in function lists, separated by type for easy lookup
 # fmt: off
@@ -252,9 +239,7 @@ class PGAggregate(ReplaceableEntity):
                     return f"INITCOND = '{value}'"
                 return f"INITCOND = {value}"
 
-            return re.sub(
-                r"INITCOND\s*=\s*([^\s,]+)", replacer, def_str, flags=re.IGNORECASE
-            )
+            return re.sub(r"INITCOND\s*=\s*([^\s,]+)", replacer, def_str, flags=re.IGNORECASE)
 
         definition = quote_initcond_if_needed(definition, _stype)
 
@@ -339,11 +324,7 @@ class PGAggregate(ReplaceableEntity):
             aggregate_name = match.group(2)
             parameters = match.group(3).strip()
             definition_body = match.group(4)
-            signature = (
-                f"{aggregate_name}({parameters})"
-                if parameters
-                else f"{aggregate_name}()"
-            )
+            signature = f"{aggregate_name}({parameters})" if parameters else f"{aggregate_name}()"
             return cls(
                 schema=schema_part,
                 signature=signature,
@@ -360,7 +341,7 @@ class PGAggregate(ReplaceableEntity):
         name, remainder = self.signature.split("(", 1)
         return '"' + name.strip() + '"(' + remainder
 
-    def _parse_aggregate_components(self) -> dict:
+    def _parse_aggregate_components(self) -> dict[str, str]:
         """
         Parses the aggregate definition string into a dict of components, e.g.
         SFUNC, STYPE, FINALFUNC, INITCOND, etc.
@@ -451,7 +432,7 @@ class PGAggregate(ReplaceableEntity):
             f'DROP AGGREGATE {self.literal_schema}."{aggregate_name}"({drop_params}){cascade_clause}'
         )
 
-    def to_sql_statement_create_or_replace(self) -> Generator:
+    def to_sql_statement_create_or_replace(self) -> Generator[TextClause, Any, None]:
         """
         PostgreSQL does NOT support CREATE OR REPLACE AGGREGATE, so emit drop+create.
         """
@@ -459,7 +440,7 @@ class PGAggregate(ReplaceableEntity):
         yield self.to_sql_statement_create()
 
     @classmethod
-    def from_database(cls, sess: Session, schema: str = "%") -> List["PGAggregate"]:
+    def from_database(cls, sess: Session, schema: str = "%") -> list["PGAggregate"]:  # type: ignore[override]
         """
         Returns all aggregates from the database as PGAggregate objects.
         """
@@ -542,6 +523,4 @@ def pg_aggregate_from_definition(
     schema: str, signature: str, definition: str, **kwargs
 ) -> PGAggregate:
     """Helper function to create PGAggregate with additional parameters"""
-    return PGAggregate(
-        schema=schema, signature=signature, definition=definition, **kwargs
-    )
+    return PGAggregate(schema=schema, signature=signature, definition=definition, **kwargs)
