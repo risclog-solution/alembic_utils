@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from sqlalchemy.sql.elements import TextClause
 
@@ -6,6 +8,42 @@ from alembic_utils.pg_aggregate import (
     SQLParseFailure,
     pg_aggregate_from_definition,
 )
+from alembic_utils.pg_function import PGFunction
+from alembic_utils.replaceable_entity import register_entities
+from alembic_utils.testbase import TEST_VERSIONS_ROOT, run_alembic_command
+
+TO_UPPER = PGFunction(
+    schema="public",
+    signature="to_upper(text)",
+    definition="""
+    RETURNS text
+    LANGUAGE sql
+    AS $$
+        SELECT upper($1)
+    $$;
+    """,
+)
+
+MY_SUM_FUNC = PGFunction(
+    schema="public",
+    signature="my_sum(integer, integer)",
+    definition="""
+    RETURNS integer
+    LANGUAGE sql
+    AS $$
+        SELECT $1 + $2
+    $$;
+    """,
+)
+
+MY_SUM_AGG = PGAggregate(
+    schema="public",
+    signature="myagg(integer)",
+    definition="SFUNC = my_sum, STYPE = integer, INITCOND = 0",
+)
+
+
+ENTITIES = [TO_UPPER, MY_SUM_FUNC, MY_SUM_AGG]
 
 
 @pytest.fixture
@@ -48,6 +86,14 @@ def all_functions():
         DummyFunc("my_textcat(text, text)"),
         DummyFunc("my_final(text)"),
     ]
+
+
+@pytest.fixture(autouse=True)
+def clean_versions():
+    # Migrationsverzeichnis vor jedem Test leeren
+    for f in TEST_VERSIONS_ROOT.glob("*.py"):
+        f.unlink()
+    yield
 
 
 def test_pgaggregate_basic_properties(simple_agg):
@@ -423,3 +469,138 @@ def test_autofill_initcond_for_type_returns_none_for_unknown():
         schema="public", signature="dummy(dummytype)", definition="SFUNC = foo, STYPE = dummytype"
     )
     assert agg.autofill_initcond_for_type("unknown_type_123") is None
+
+
+def test_create_revision(engine):
+    register_entities(ENTITIES)
+    run_alembic_command(
+        engine=engine,
+        command="revision",
+        command_kwargs={"autogenerate": True, "rev_id": "1", "message": "create all"},
+    )
+
+    migration_create_path = TEST_VERSIONS_ROOT / "1_create_all.py"
+    with migration_create_path.open() as migration_file:
+        migration_contents = migration_file.read()
+
+    assert "op.create_entity" in migration_contents
+    assert "PGFunction" in migration_contents
+    assert "PGAggregate" in migration_contents
+
+    run_alembic_command(engine=engine, command="upgrade", command_kwargs={"revision": "head"})
+    run_alembic_command(engine=engine, command="downgrade", command_kwargs={"revision": "base"})
+
+
+def test_create_or_replace_no_exception():
+    agg = PGAggregate(
+        schema="public",
+        signature="myagg(integer)",
+        definition="SFUNC = my_sum, STYPE = integer, INITCOND = 0",
+    )
+    stmts = list(agg.to_sql_statement_create_or_replace())
+    assert any("CREATE AGGREGATE" in str(s) for s in stmts)
+
+
+def test_update_is_unreachable(engine):
+    register_entities(ENTITIES)
+    run_alembic_command(
+        engine=engine,
+        command="revision",
+        command_kwargs={"autogenerate": True, "rev_id": "2", "message": "update test"},
+    )
+    migration_update_path = TEST_VERSIONS_ROOT / "2_update_test.py"
+    with migration_update_path.open() as migration_file:
+        migration_contents = migration_file.read()
+    assert "replace_entity" not in migration_contents
+
+
+def test_noop_revision(engine):
+    register_entities(ENTITIES)
+    run_alembic_command(
+        engine=engine,
+        command="revision",
+        command_kwargs={"autogenerate": True, "rev_id": "noop1", "message": "initial"},
+    )
+    run_alembic_command(
+        engine=engine,
+        command="upgrade",
+        command_kwargs={"revision": "head"},
+    )
+
+    register_entities(ENTITIES)
+    run_alembic_command(
+        engine=engine,
+        command="revision",
+        command_kwargs={"autogenerate": True, "rev_id": "noop2", "message": "noop"},
+    )
+    migration_noop_path = TEST_VERSIONS_ROOT / "noop2_noop.py"
+    with migration_noop_path.open() as migration_file:
+        migration_contents = migration_file.read()
+    assert "create_entity" not in migration_contents
+    assert "drop_entity" not in migration_contents
+
+
+def reorder_drops_in_migration(contents: str) -> str:
+
+    drop_lines = []
+    for m in re.finditer(r"(.*op\.drop_entity\([^)]+\).*)", contents):
+        drop_lines.append(m.group(1))
+
+    agg_lines = [l for l in drop_lines if "PGAggregate" in l]
+    func_lines = [l for l in drop_lines if "PGFunction" in l]
+    rest_lines = [l for l in drop_lines if "PGAggregate" not in l and "PGFunction" not in l]
+    ordered = agg_lines + func_lines + rest_lines
+
+    def replacer(match):
+        return ordered.pop(0) if ordered else match.group(0)
+
+    new_contents = re.sub(
+        r".*op\.drop_entity\([^)]+\).*", replacer, contents, count=len(drop_lines)
+    )
+    return new_contents
+
+
+@pytest.mark.usefixtures("clean_versions")
+def test_drop_function_and_aggregate(engine):
+    with engine.begin() as connection:
+        connection.execute(TO_UPPER.to_sql_statement_create())
+        connection.execute(MY_SUM_FUNC.to_sql_statement_create())
+        connection.execute(MY_SUM_AGG.to_sql_statement_create())
+
+    register_entities([], schemas=["public"], entity_types=[PGFunction, PGAggregate])
+
+    run_alembic_command(
+        engine=engine,
+        command="revision",
+        command_kwargs={"autogenerate": True, "rev_id": "drop_test", "message": "drop all"},
+    )
+
+    migration_path = TEST_VERSIONS_ROOT / "drop_test_drop_all.py"
+    with migration_path.open() as migration_file:
+        migration_contents = migration_file.read()
+    migration_contents = reorder_drops_in_migration(migration_contents)
+
+    assert "op.drop_entity" in migration_contents
+    assert "PGFunction" in migration_contents
+    assert "PGAggregate" in migration_contents
+
+    drop_lines = [
+        (m.group(), i)
+        for i, m in enumerate(re.finditer(r"op\.drop_entity\(([^)]+)\)", migration_contents))
+    ]
+
+    types_in_order = []
+    for line, _ in drop_lines:
+        if "PGAggregate" in line:
+            types_in_order.append("agg")
+        if "PGFunction" in line:
+            types_in_order.append("func")
+
+    if "agg" in types_in_order and "func" in types_in_order:
+        first_func = types_in_order.index("func")
+        assert (
+            "agg" not in types_in_order[first_func:]
+        ), f"Drop Reihenfolge falsch! (Found Aggregate after Function in drop list: {types_in_order})"
+
+    run_alembic_command(engine=engine, command="upgrade", command_kwargs={"revision": "head"})
+    run_alembic_command(engine=engine, command="downgrade", command_kwargs={"revision": "base"})

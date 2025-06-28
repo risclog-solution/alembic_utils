@@ -280,15 +280,10 @@ class PGAggregate(ReplaceableEntity):
         return definition.strip()
 
     def autofill_initcond_for_type(self, stype):
-        """Returns a default INITCOND for known types if missing."""
-        if stype is None:
-            return None
-        stype = stype.lower()
-        if stype == "text":
-            return "''"
-        elif stype in self.KNOWN_INT_TYPES:
-            return "0"
-        return None
+        t = (stype or "").lower()
+        defaults = {"text": "''"}
+
+        return defaults.get(t) or ("0" if t in self.KNOWN_INT_TYPES else None)
 
     def autofill_dependencies(self, all_entities):
         """
@@ -372,6 +367,7 @@ class PGAggregate(ReplaceableEntity):
         """
         Returns a list of referenced function signatures (as strings) for this aggregate.
         """
+
         dependencies = []
         components = self._parse_aggregate_components()
         function_components = [
