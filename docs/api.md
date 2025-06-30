@@ -126,3 +126,23 @@ grant = PGGrantTable(
     with_grant_option=False,
 )
 ```
+
+
+::: alembic_utils.pg_aggregate.PGAggregate
+    :docstring:
+
+
+```python
+PGAggregate(
+    schema: str,
+    signature: str,
+    definition: str,
+    _sfunc: Optional[str] = None,
+    _stype: Optional[str] = None,
+    _initcond: Optional[Any] = None,
+    _finalfunc: Optional[str] = None,
+    _stored_dependencies: Optional[List[Any]] = None,
+    all_entities: Optional[List[Any]] = None,
+    **kwargs: Any
+)
+```

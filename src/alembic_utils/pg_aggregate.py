@@ -96,82 +96,21 @@ PG_CATALOG_FUNCTIONS_MISC = {
 
 class PGAggregate(ReplaceableEntity):
     """
-    A PostgreSQL Aggregate compatible with Alembic's autogenerate.
+    PGAggregate allows the creation and management of PostgreSQL
+    aggregate functions compatible with Alembic migrations.
 
-    Args:
-        schema (str): Schema name
-        signature (str): Aggregate signature, e.g. 'myagg(integer)'
-        definition (str): Aggregate definition, e.g. 'SFUNC = my_func, STYPE = integer, ...'
-        _sfunc (str): State function
-        _stype (str): State type
-        _initcond (str): Initial condition
-        _finalfunc (str): Final function
-        _stored_dependencies (list): Explicit dependency list
-        all_entities (list): List of all entities for dependency lookup
-        **kwargs: Any extra PostgreSQL aggregate options (e.g. PARALLEL, MSSPACE)
+    **Parameters:**
+        * **schema* str: Schema name where the aggregate function is defined.
+        * **signature* str: Function signature, e.g., 'agg_func(integer)'.
+        * **definition* str: Aggregate definition, e.g., 'SFUNC = func_name, STYPE = integer'.
+        * **_sfunc* str: Name of the state transition function.
+        * **_stype* str: Data type of the state value.
+        * **_initcond* Any: Initial condition of the aggregate.
+        * **_finalfunc* str: Optional final function applied at aggregation end.
+        * **_stored_dependencies* list: Explicit dependency tracking.
+        * **all_entities* list: List of entities for automatic dependency resolution.
+        * **kwargs* Any: Additional PostgreSQL-specific options (e.g., PARALLEL).
     """
-
-    # ---- USAGE EXAMPLES ----
-
-    # # Example 1: Minimal custom aggregate using a user-defined function
-    # custom_agg = PGAggregate(
-    #     schema="public",
-    #     signature="concat_texts(text)",
-    #     definition="""
-    #         SFUNC = my_concat_func,
-    #         STYPE = text,
-    #         INITCOND = ''
-    #     """,
-    #     _sfunc="my_concat_func",      # Name of your state function
-    #     _stype="text",                # State type, here 'text'
-    # )
-
-    # # Example 2: Aggregate using built-in Postgres functions (auto-qualified)
-    # builtin_sum_agg = PGAggregate(
-    #     schema="public",
-    #     signature="custom_sum(bigint)",
-    #     definition="SFUNC = int8pl, STYPE = bigint, INITCOND = 0"
-    #     # SFUNC will become pg_catalog.int8pl automatically!
-    # )
-
-    # # Example 3: Using kwargs for special Postgres options (like PARALLEL, MSSPACE)
-    # parallel_agg = PGAggregate(
-    #     schema="public",
-    #     signature="parallel_sum(int)",
-    #     definition="SFUNC = int4pl, STYPE = int, INITCOND = 0",
-    #     PARALLEL="SAFE",           # Will be added as 'PARALLEL = SAFE'
-    #     MSSPACE=8,                 # Will be added as 'MSSPACE = 8'
-    # )
-
-    # # Example 4: Create aggregate directly from a SQL statement
-    # agg_from_sql = PGAggregate.from_sql("""
-    #     CREATE AGGREGATE public.sum_plus(text) (
-    #         SFUNC = custom_add,
-    #         STYPE = text,
-    #         INITCOND = ''
-    #     )
-    # """)
-
-    # # Example 5: Using all_entities for automatic dependency detection
-    # all_funcs = [
-    #     # ... list of PGFunction objects, e.g. your own functions ...
-    # ]
-    # dep_agg = PGAggregate(
-    #     schema="public",
-    #     signature="dep_agg(text)",
-    #     definition="SFUNC = my_textcat, STYPE = text, INITCOND = ''",
-    #     _sfunc="my_textcat",
-    #     all_entities=all_funcs,   # Will auto-detect dependencies for this aggregate
-    # )
-
-    # # Example 6: Automatic INITCOND detection (will default to 0 for integers)
-    # auto_initcond_agg = PGAggregate(
-    #     schema="public",
-    #     signature="auto_init(bigint)",
-    #     definition="SFUNC = int8pl, STYPE = bigint",  # No INITCOND, will auto add '0'
-    #     _sfunc="int8pl",
-    #     _stype="bigint",
-    # )
 
     type_ = "aggregate"
     KNOWN_INT_TYPES = {"int", "int2", "int4", "int8", "bigint", "smallint", "integer"}
