@@ -126,3 +126,26 @@ grant = PGGrantTable(
     with_grant_option=False,
 )
 ```
+
+
+::: alembic_utils.pg_sequence.PGSequence
+:docstring:
+
+
+```python
+from alembic_utils.pg_sequence import PGSequence
+
+sequence = PGSequence(
+    schema="public",
+    signature="order_seq",
+    definition="""
+        AS bigint
+        START WITH 1000
+        INCREMENT BY 1
+        MINVALUE 1000
+        MAXVALUE 99999999
+        CACHE 1
+        NO CYCLE
+    """,
+)
+```

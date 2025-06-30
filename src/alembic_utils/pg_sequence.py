@@ -1,47 +1,8 @@
-"""
-pg_sequence.py – ReplaceableEntity for PostgreSQL SEQUENCE objects.
-
-- Full compatibility with alembic_utils (autogenerate, entity comparison, migration)
-- Includes robust whitespace/comment cleaning for definitions
-- Supports ergonomic construction via from_args()
-- Introspects all relevant sequence properties (data_type, increment, min/max, etc.)
-- Reflection safe for all Postgres versions (pg_sequence and information_schema fallback)
-- Autogenerates always clean, minimal diffs – even for hand-written or auto-generated definitions
-
-Example prototype usage (see bottom):
-    workflow_seq_sequence = PGSequence(
-        schema="public",
-        signature="workflow_seq",
-        definition=\"\"\"
-            AS bigint
-            START WITH 1
-            INCREMENT BY 1
-            MINVALUE 1
-            MAXVALUE 9223372036854775807
-            CACHE 1
-            NO CYCLE
-        \"\"\"
-    )
-
-    # or, ergonomically:
-    workflow_seq_sequence = PGSequence.from_args(
-        schema="public",
-        signature="workflow_seq",
-        data_type="bigint",
-        start_value=1,
-        minvalue=1,
-        maxvalue=9223372036854775807,
-        increment=1,
-        cycle=False,
-        cache=1,
-        owned_by=None,
-    )
-"""
-
-from typing import Optional, List
 import re
-from sqlalchemy.orm import Session
+from typing import Optional
+
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from alembic_utils.replaceable_entity import ReplaceableEntity
 
@@ -50,10 +11,27 @@ class PGSequence(ReplaceableEntity):
     """
     ReplaceableEntity for PostgreSQL SEQUENCE objects.
 
-    - Always require 'definition' (cleaned and normalized internally)
-    - All parsing, comparison, migration uses the cleaned definition
-    - Use from_args() for ergonomic field-based construction
-    - Reflection works for all supported Postgres versions (uses pg_sequence with fallback)
+    **Parameters:**
+
+    * **schema** (*str*): The database schema, e.g., 'public'
+    * **signature** (*str*): The unique name of the sequence within the schema
+    * **definition** (*str*): The SQL definition of the sequence as it exists in the database
+
+    **Example:**
+
+        seq = PGSequence(
+            schema="public",
+            signature="my_sequence",
+            definition=\"\"\"
+                AS bigint
+                START WITH 1
+                INCREMENT BY 1
+                MINVALUE 1
+                MAXVALUE 9223372036854775807
+                CACHE 1
+                NO CYCLE
+            \"\"\"
+        )
     """
 
     def __init__(
@@ -64,29 +42,21 @@ class PGSequence(ReplaceableEntity):
     ):
         self.schema = schema
         self.signature = signature
-        # Clean and normalize the definition (remove comments, collapse whitespace, etc)
         clean_def = self.clean_sequence_definition(definition)
         self.definition = clean_def
 
-        # Parse properties from the cleaned definition
         self.data_type = self._extract(r"AS\s+(\w+)", clean_def, default="bigint")
-        self.start_value = int(
-            self._extract(r"START WITH\s+(-?\d+)", clean_def, default=1)
-        )
-        self.increment = int(
-            self._extract(r"INCREMENT BY\s+(-?\d+)", clean_def, default=1)
-        )
+        self.start_value = int(self._extract(r"START WITH\s+(-?\d+)", clean_def, default=1))
+        self.increment = int(self._extract(r"INCREMENT BY\s+(-?\d+)", clean_def, default=1))
         self.minvalue = int(self._extract(r"MINVALUE\s+(-?\d+)", clean_def, default=1))
         self.maxvalue = int(
             self._extract(r"MAXVALUE\s+(-?\d+)", clean_def, default=9223372036854775807)
         )
         self.cache = int(self._extract(r"CACHE\s+(\d+)", clean_def, default=1))
-        self.cycle = bool(
-            re.search(r"\bCYCLE\b", clean_def, re.IGNORECASE)
-        ) and not re.search(r"NO CYCLE", clean_def, re.IGNORECASE)
-        owned_match = re.search(
-            r"OWNED BY\s+([a-zA-Z0-9_.\"]+)", clean_def, re.IGNORECASE
+        self.cycle = bool(re.search(r"\bCYCLE\b", clean_def, re.IGNORECASE)) and not re.search(
+            r"NO CYCLE", clean_def, re.IGNORECASE
         )
+        owned_match = re.search(r"OWNED BY\s+([a-zA-Z0-9_.\"]+)", clean_def, re.IGNORECASE)
         self.owned_by = owned_match.group(1) if owned_match else None
 
         super().__init__(self.schema, self.signature, self.definition)
@@ -101,13 +71,6 @@ class PGSequence(ReplaceableEntity):
 
     @staticmethod
     def clean_sequence_definition(definition: str) -> str:
-        """
-        Clean up sequence definition string:
-        - Remove SQL single-line comments (-- ...)
-        - Strip each line, join lines into one
-        - Collapse all multiple whitespace (including tabs, indents) to a single space
-        - Beautify commas (rare for sequences, but for consistency)
-        """
         definition = re.sub(r"--.*", "", definition)
         lines = [line.strip() for line in definition.splitlines() if line.strip()]
         definition = " ".join(lines)
@@ -148,11 +111,7 @@ class PGSequence(ReplaceableEntity):
         return cls(schema, signature, definition)
 
     @classmethod
-    def from_database(cls, sess: Session, schema: str = "%") -> List["PGSequence"]:
-        """
-        Reflect all sequences in a schema, supporting all Postgres versions.
-        Uses pg_sequence if available (PG 10+), falls back to information_schema.
-        """
+    def from_database(cls, sess: Session, schema: str = "%"):
         sql = """
         SELECT c.relname as sequence_name,
                n.nspname as sequence_schema
@@ -164,7 +123,6 @@ class PGSequence(ReplaceableEntity):
         rows = list(sess.execute(text(sql), {"schema": schema}).mappings())
         entities = []
         for row in rows:
-            # Try reading everything from pg_sequence (Postgres 10+)
             sql2 = """
             SELECT s.seqtypid::regtype::text as data_type,
                    s.seqstart as start_value,
@@ -190,7 +148,6 @@ class PGSequence(ReplaceableEntity):
                 .fetchone()
             )
             if not result:
-                # Fallback for < PG10, fetch from information_schema (no cache)
                 sql3 = """
                 SELECT data_type,
                        start_value::bigint,
@@ -213,9 +170,9 @@ class PGSequence(ReplaceableEntity):
                     .fetchone()
                 )
                 if not result2:
-                    continue  # skip if no info found
+                    continue
                 cycle = result2["cycle_option"] == "YES"
-                cache = 1  # Default fallback for old PG
+                cache = 1
                 data_type = result2["data_type"]
                 start_value = result2["start_value"]
                 minvalue = result2["minvalue"]
@@ -230,7 +187,6 @@ class PGSequence(ReplaceableEntity):
                 maxvalue = result["maxvalue"]
                 increment = result["increment"]
 
-            # Build definition as if from from_args (always normalized)
             lines = [
                 f"AS {data_type}",
                 f"START WITH {start_value}",
@@ -252,18 +208,12 @@ class PGSequence(ReplaceableEntity):
         return entities
 
     def to_sql_statement_create(self):
-        """
-        Returns a SQLAlchemy TextClause for CREATE SEQUENCE with cleaned definition.
-        """
         sql = f"CREATE SEQUENCE {self.schema}.{self.signature} {self.definition};"
         from sqlalchemy import text as sql_text
 
         return sql_text(sql)
 
     def to_sql_statement_drop(self, cascade=False):
-        """
-        Returns a SQLAlchemy TextClause for DROP SEQUENCE [CASCADE].
-        """
         sql = f"DROP SEQUENCE IF EXISTS {self.schema}.{self.signature}"
         if cascade:
             sql += " CASCADE"
