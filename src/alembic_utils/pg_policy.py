@@ -20,6 +20,10 @@ class PGPolicy(OnEntityMixin, ReplaceableEntity):
 
     type_ = "policy"
 
+    def __init__(self, *args, enable_rls=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.enable_rls = enable_rls
+
     @classmethod
     def from_sql(cls, sql: str) -> "PGPolicy":
         """Create an instance instance from a SQL string"""
@@ -44,14 +48,19 @@ class PGPolicy(OnEntityMixin, ReplaceableEntity):
         raise SQLParseFailure(f'Failed to parse SQL into PGPolicy """{sql}"""')
 
     def to_sql_statement_create(self):
-        """Generates a SQL "create poicy" statement for PGPolicy"""
+        sqls = []
+        if getattr(self, "enable_rls", False):
+            sqls.append(f"ALTER TABLE {self.on_entity} ENABLE ROW LEVEL SECURITY;")
+        sqls.append(f"CREATE POLICY {self.signature} on {self.on_entity} {self.definition}")
 
-        return sql_text(f"CREATE POLICY {self.signature} on {self.on_entity} {self.definition}")
+        return sql_text("\n".join(sqls))
 
     def to_sql_statement_drop(self, cascade=False):
-        """Generates a SQL "drop policy" statement for PGPolicy"""
-        cascade = "cascade" if cascade else ""
-        return sql_text(f"DROP POLICY {self.signature} on {self.on_entity} {cascade}")
+        cascade_clause = "cascade" if cascade else ""
+        sqls = [f"DROP POLICY {self.signature} on {self.on_entity} {cascade_clause};"]
+        if getattr(self, "enable_rls", False):
+            sqls.append(f"ALTER TABLE {self.on_entity} DISABLE ROW LEVEL SECURITY;")
+        return sql_text("\n".join(sqls))
 
     def to_sql_statement_create_or_replace(self):
         """Not implemented, postgres policies do not support replace."""

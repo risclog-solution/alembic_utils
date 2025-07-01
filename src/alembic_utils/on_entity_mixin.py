@@ -13,7 +13,7 @@ else:
 class OnEntityMixin(_Base):
     """Mixin to ReplaceableEntity providing setup for entity types requiring an "ON" clause"""
 
-    def __init__(self, schema: str, signature: str, definition: str, on_entity: str):
+    def __init__(self, schema: str, signature: str, definition: str, on_entity: str, **kwargs):
         super().__init__(schema=schema, signature=signature, definition=definition)
 
         if "." not in on_entity:
