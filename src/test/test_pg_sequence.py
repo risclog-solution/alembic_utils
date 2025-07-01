@@ -1,4 +1,5 @@
 import re
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.sql.elements import TextClause
@@ -13,6 +14,7 @@ def ensure_public_table(engine):
     with engine.begin() as conn:
         conn.execute(text("CREATE TABLE IF NOT EXISTS public.table (id integer primary key);"))
     yield
+
 
 SEQ_1 = PGSequence.from_args(
     schema="public",
@@ -37,26 +39,27 @@ SEQ_2 = PGSequence.from_args(
     increment=10,
     cycle=True,
     cache=5,
-    owned_by="public.table.id", 
+    owned_by="public.table.id",
 )
 
 ENTITIES = [SEQ_1, SEQ_2]
+
 
 @pytest.fixture
 def simple_seq():
     return SEQ_1
 
+
 @pytest.fixture
 def seq_with_owned_by():
     return SEQ_2
+
 
 @pytest.fixture(autouse=True)
 def clean_versions():
     for f in TEST_VERSIONS_ROOT.glob("*.py"):
         f.unlink()
     yield
-
-
 
 
 def test_pgsequence_basic_properties(simple_seq):
@@ -72,9 +75,11 @@ def test_pgsequence_basic_properties(simple_seq):
     assert simple_seq.owned_by is None
     assert simple_seq.type_ == "sequence"
 
+
 def test_pgsequence_with_owned_by(seq_with_owned_by):
     assert seq_with_owned_by.owned_by == "public.table.id"
     assert "OWNED BY public.table.id" in seq_with_owned_by.definition
+
 
 def test_pgsequence_clean_definition_removes_comments():
     dirty = """
@@ -89,15 +94,20 @@ def test_pgsequence_clean_definition_removes_comments():
     """
     cleaned = PGSequence.clean_sequence_definition(dirty)
     assert "--" not in cleaned
-    assert "AS bigint START WITH 1 INCREMENT BY 1 MINVALUE 1 MAXVALUE 9999 CACHE 1 NO CYCLE" == cleaned
+    assert (
+        "AS bigint START WITH 1 INCREMENT BY 1 MINVALUE 1 MAXVALUE 9999 CACHE 1 NO CYCLE" == cleaned
+    )
+
 
 def test_pgsequence_repr(simple_seq):
     assert "PGSequence" in repr(simple_seq)
     assert "myseq" in repr(simple_seq)
 
+
 def test_render_import_statement():
     stmt = PGSequence.render_import_statement()
     assert "import PGSequence" in stmt or "import" in stmt
+
 
 def test_to_sql_statement_create(simple_seq):
     stmt = simple_seq.to_sql_statement_create()
@@ -105,21 +115,25 @@ def test_to_sql_statement_create(simple_seq):
     assert "CREATE SEQUENCE" in str(stmt)
     assert "myseq" in str(stmt)
 
+
 def test_to_sql_statement_drop(simple_seq):
     stmt = simple_seq.to_sql_statement_drop()
     assert isinstance(stmt, TextClause)
     assert "DROP SEQUENCE" in str(stmt)
     assert "myseq" in str(stmt)
 
+
 def test_to_sql_statement_drop_with_cascade(simple_seq):
     stmt = simple_seq.to_sql_statement_drop(cascade=True)
     assert "CASCADE" in str(stmt)
+
 
 def test_to_sql_statement_create_or_replace(simple_seq):
     stmts = list(simple_seq.to_sql_statement_create_or_replace())
     assert len(stmts) == 2
     assert "DROP SEQUENCE" in str(stmts[0])
     assert "CREATE SEQUENCE" in str(stmts[1])
+
 
 def test_pgsequence_from_database(monkeypatch):
     class DummySession:
@@ -137,15 +151,25 @@ def test_pgsequence_from_database(monkeypatch):
                                 "cycle": False,
                                 "cache": 1,
                             }
+
                     return Mapper()
+
             if "FROM pg_class" in str(sql):
-                return type("Dummy", (), {
-                    "mappings": lambda self: [{"sequence_name": "myseq", "sequence_schema": "public"}]
-                })()
+                return type(
+                    "Dummy",
+                    (),
+                    {
+                        "mappings": lambda self: [
+                            {"sequence_name": "myseq", "sequence_schema": "public"}
+                        ]
+                    },
+                )()
             return Result()
+
     entities = PGSequence.from_database(DummySession())
     assert isinstance(entities, list)
     assert any(isinstance(e, PGSequence) for e in entities)
+
 
 def test_pgsequence_clean_def_strip_and_commas():
     messy = """
@@ -181,6 +205,7 @@ def test_create_revision(engine, ensure_public_table):
     run_alembic_command(engine=engine, command="upgrade", command_kwargs={"revision": "head"})
     run_alembic_command(engine=engine, command="downgrade", command_kwargs={"revision": "base"})
 
+
 def test_create_or_replace_no_exception():
     seq = PGSequence.from_args(
         schema="public",
@@ -197,6 +222,7 @@ def test_create_or_replace_no_exception():
     stmts = list(seq.to_sql_statement_create_or_replace())
     assert any("CREATE SEQUENCE" in str(s) for s in stmts)
 
+
 def test_update_is_unreachable(engine, ensure_public_table):
     register_entities(ENTITIES)
     run_alembic_command(
@@ -208,6 +234,7 @@ def test_update_is_unreachable(engine, ensure_public_table):
     with migration_update_path.open() as migration_file:
         migration_contents = migration_file.read()
     assert "replace_entity" not in migration_contents
+
 
 def test_noop_revision(engine, ensure_public_table):
     register_entities(ENTITIES)
@@ -234,6 +261,7 @@ def test_noop_revision(engine, ensure_public_table):
     assert "create_entity" not in migration_contents
     assert "drop_entity" not in migration_contents
 
+
 def reorder_drops_in_migration(contents: str) -> str:
     drop_lines = []
     for m in re.finditer(r"(.*op\\.drop_entity\\([^)]+\\).*)", contents):
@@ -250,6 +278,7 @@ def reorder_drops_in_migration(contents: str) -> str:
         r".*op\\.drop_entity\\([^)]+\\).*", replacer, contents, count=len(drop_lines)
     )
     return new_contents
+
 
 @pytest.mark.usefixtures("clean_versions")
 def test_drop_sequences(engine, ensure_public_table):
@@ -289,7 +318,9 @@ def test_drop_sequences(engine, ensure_public_table):
 def test_pgsequence_from_database_pg_sequence(engine):
     seq_name = "test_seq_pg10"
     with engine.begin() as conn:
-        conn.execute(text(f"""
+        conn.execute(
+            text(
+                f"""
             CREATE SEQUENCE public.{seq_name}
                 AS integer
                 START WITH 11
@@ -298,7 +329,9 @@ def test_pgsequence_from_database_pg_sequence(engine):
                 MAXVALUE 222
                 CACHE 4
                 CYCLE
-        """))
+        """
+            )
+        )
     try:
         with engine.connect() as sess:
             result = PGSequence.from_database(sess, schema="public")
@@ -317,40 +350,46 @@ def test_pgsequence_from_database_pg_sequence(engine):
         with engine.begin() as conn:
             conn.execute(text(f"DROP SEQUENCE IF EXISTS public.{seq_name} CASCADE"))
 
+
 @pytest.mark.usefixtures("engine")
 def test_pgsequence_from_database_information_schema(monkeypatch, engine):
     class DummySession:
         def execute(self, sql, params):
             sql_str = str(sql)
             if "FROM pg_class" in sql_str:
-                return DummyResult([
-                    {
-                        "sequence_schema": "public",
-                        "sequence_name": "test_seq_fallback"
-                    }
-                ])
+                return DummyResult(
+                    [{"sequence_schema": "public", "sequence_name": "test_seq_fallback"}]
+                )
 
             if "FROM pg_sequence" in sql_str:
                 return DummyResult([])
-            
+
             if "FROM information_schema.sequences" in sql_str:
-                return DummyResult([{
-                    "data_type": "bigint",
-                    "start_value": 9,
-                    "minvalue": 1,
-                    "maxvalue": 88,
-                    "increment": 2,
-                    "cycle_option": "NO"
-                }])
+                return DummyResult(
+                    [
+                        {
+                            "data_type": "bigint",
+                            "start_value": 9,
+                            "minvalue": 1,
+                            "maxvalue": 88,
+                            "increment": 2,
+                            "cycle_option": "NO",
+                        }
+                    ]
+                )
             raise AssertionError("Unbekannter SQL-Query: " + sql_str)
+
     class DummyResult:
         def __init__(self, rows):
             self.rows = rows
             self._i = 0
+
         def mappings(self):
             return self
+
         def __iter__(self):
             return iter(self.rows)
+
         def fetchone(self):
             if self._i >= len(self.rows):
                 return None
@@ -369,18 +408,28 @@ def test_pgsequence_from_database_information_schema(monkeypatch, engine):
     assert "INCREMENT BY 2" in definition
     assert "MINVALUE 1" in definition
     assert "MAXVALUE 88" in definition
-    assert "CACHE 1" in definition # Fallback!
+    assert "CACHE 1" in definition  # Fallback!
     assert "NO CYCLE" in definition
+
 
 def test_pgsequence_from_database_empty(monkeypatch):
     class DummySession:
         def execute(self, sql, params):
             return DummyResult([])
+
     class DummyResult:
-        def __init__(self, rows): self.rows = rows
-        def mappings(self): return self
-        def __iter__(self): return iter(self.rows)
-        def fetchone(self): return None
+        def __init__(self, rows):
+            self.rows = rows
+
+        def mappings(self):
+            return self
+
+        def __iter__(self):
+            return iter(self.rows)
+
+        def fetchone(self):
+            return None
+
     result = PGSequence.from_database(DummySession(), schema="public")
     assert result == []
 
@@ -390,23 +439,26 @@ def test_pgsequence_from_database_skip_on_missing_info(monkeypatch):
         def execute(self, sql, params):
             sql_str = str(sql)
             if "FROM pg_class" in sql_str:
-                return DummyResult([
-                    {
-                        "sequence_schema": "public",
-                        "sequence_name": "should_skip"
-                    }
-                ])
-    
+                return DummyResult([{"sequence_schema": "public", "sequence_name": "should_skip"}])
+
             if "FROM pg_sequence" in sql_str:
                 return DummyResult([])
-    
+
             if "FROM information_schema.sequences" in sql_str:
                 return DummyResult([])
             raise AssertionError("Unerwartete Query: " + sql_str)
+
     class DummyResult:
-        def __init__(self, rows): self.rows = rows; self._i = 0
-        def mappings(self): return self
-        def __iter__(self): return iter(self.rows)
+        def __init__(self, rows):
+            self.rows = rows
+            self._i = 0
+
+        def mappings(self):
+            return self
+
+        def __iter__(self):
+            return iter(self.rows)
+
         def fetchone(self):
             if self._i >= len(self.rows):
                 return None
@@ -415,4 +467,4 @@ def test_pgsequence_from_database_skip_on_missing_info(monkeypatch):
             return row
 
     result = PGSequence.from_database(DummySession(), schema="public")
-    assert result == []  
+    assert result == []
