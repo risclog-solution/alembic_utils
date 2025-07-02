@@ -279,11 +279,7 @@ def compare_registered_entities(
         schema_name
         for schema_name in all_schema_references
         if (
-            schema_name
-            is not None
-            not in (
-                registry.exclude_schemas or set()
-            )  # user defined. Deprecated for remove in 0.6.0
+            schema_name is not None not in (registry.exclude_schemas or set())
             and schema_name not in {"information_schema", None}
         )
     }
@@ -301,7 +297,7 @@ def compare_registered_entities(
 
     # database rendered definitions for the entities we have a local instance for
     # Note: used for drops
-    local_entities = []
+    local_entities: List[ReplaceableEntity] = []
 
     # Required migration OPs, Create/Update/NoOp
     for entity in ordered_entities:
@@ -348,7 +344,6 @@ def compare_registered_entities(
                     entity.__class__.__name__,
                     entity.identity,
                 )
-
         finally:
             sess.rollback()
 
@@ -358,24 +353,22 @@ def compare_registered_entities(
     transaction = connection.begin_nested()
     sess = Session(bind=connection)
     try:
+        drop_ops: List[DropOp] = []
         # All database entities currently live
         # Check if anything needs to drop
         subclasses = collect_subclasses(alembic_utils, ReplaceableEntity)
         for entity_class in subclasses:
-
             if entity_class not in registry.allowed_entity_types:
                 continue
 
             # Entities within the schemas that are live
             for schema in observed_schemas:
-
                 db_entities: List[ReplaceableEntity] = entity_class.from_database(
                     sess, schema=schema
                 )
 
-                # Check for functions that were deleted locally
                 for db_entity in db_entities:
-
+                    # Apply filters for reflected entities
                     if not include_entity(db_entity, autogen_context, reflected=True):
                         logger.debug(
                             "Ignoring remote entity %s %s due to AutogenContext filters",
@@ -384,20 +377,33 @@ def compare_registered_entities(
                         )
                         continue
 
-                    for local_entity in local_entities:
-                        if db_entity.identity == local_entity.identity:
-                            break
-                    else:
-                        # No match was found locally
-                        # If the entity passes the filters,
-                        # we should create a DropOp
-                        upgrade_ops.ops.append(DropOp(db_entity))
+                    # If this DB entity no longer exists locally, schedule a DROP
+                    if all(db_entity.identity != le.identity for le in local_entities):
+                        op = DropOp(db_entity)
+                        drop_ops.append(op)
                         logger.info(
                             "Detected DropOp op for %s %s",
                             db_entity.__class__.__name__,
                             db_entity.identity,
                         )
 
+        # Sort DROP operations: ensure aggregates drop before functions
+        DROP_PRIORITY = {
+            "PGAggregate": 0,
+            "PGFunction": 1,
+        }
+
+        def _drop_key(dropop: DropOp):
+            # Each DropOp has a .target attribute referencing the entity
+            ent = dropop.target
+            # Determine priority based on class name mapping
+            prio = DROP_PRIORITY.get(ent.__class__.__name__, 2)
+            # Secondary sort by schema and signature for consistency
+            return (prio, ent.schema, ent.signature)
+
+        # Append sorted drop operations to the migration
+        for dropop in sorted(drop_ops, key=_drop_key):
+            upgrade_ops.ops.append(dropop)
     finally:
         sess.rollback()
 
