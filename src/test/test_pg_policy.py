@@ -81,7 +81,6 @@ def test_create_revision(engine, schema_setup) -> None:
 
     with migration_create_path.open() as migration_file:
         migration_contents = migration_file.read()
-
     assert "op.create_entity" in migration_contents
     assert "op.drop_entity" in migration_contents
     assert "op.replace_entity" not in migration_contents
