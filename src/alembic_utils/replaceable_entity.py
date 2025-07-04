@@ -248,6 +248,7 @@ def register_entities(
     * **exclude_schemas** - *Optional[List[str]]*: A list of SQL schemas to ignore. Note, explicitly registered entities will still be monitored.
     * **entity_types** - *Optional[List[Type[ReplaceableEntity]]]*: A list of ReplaceableEntity classes to consider during migrations. Other entity types are ignored
     """
+
     registry.register(entities, schemas, exclude_schemas, entity_types)
 
 
@@ -389,8 +390,14 @@ def compare_registered_entities(
 
         # Sort DROP operations: ensure aggregates drop before functions
         DROP_PRIORITY = {
-            "PGAggregate": 0,
-            "PGFunction": 1,
+            "PGExtension":0,
+            "PGAggregate": 1,
+            "PGSequence": 2,
+            "PGFunction": 3,
+            "PGPolicy": 4,
+            "PGTrigger": 5,
+            "PGGrantTable": 6,
+            "PGView": 7,
         }
 
         def _drop_key(dropop: DropOp):
