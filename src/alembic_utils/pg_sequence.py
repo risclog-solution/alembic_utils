@@ -1,7 +1,8 @@
 import re
 from typing import Optional
 
-from sqlalchemy import text
+from sqlalchemy import DefaultClause
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 
 from alembic_utils.replaceable_entity import ReplaceableEntity
@@ -123,7 +124,7 @@ class PGSequence(ReplaceableEntity):
           AND n.nspname LIKE :schema
         """
 
-        rows = list(sess.execute(text(sql), {"schema": schema}).mappings())
+        rows = list(sess.execute(sql_text(sql), {"schema": schema}).mappings())
 
         entities = []
         for row in rows:
@@ -143,7 +144,7 @@ class PGSequence(ReplaceableEntity):
             """
             result = (
                 sess.execute(
-                    text(sql2),
+                    sql_text(sql2),
                     {
                         "schema": row["sequence_schema"],
                         "sequence": row["sequence_name"],
@@ -165,7 +166,7 @@ class PGSequence(ReplaceableEntity):
                 """
                 result2 = (
                     sess.execute(
-                        text(sql3),
+                        sql_text(sql3),
                         {
                             "schema": row["sequence_schema"],
                             "sequence": row["sequence_name"],
@@ -214,13 +215,8 @@ class PGSequence(ReplaceableEntity):
         return entities
 
     def to_sql_statement_create(self):
-
-        PGSequence._create_counter += 1
-        print(f"[{PGSequence._create_counter}] CREATE SEQUENCE: {self.schema}.{self.signature}")
-
+        self._create_counter += 1
         sql = f"CREATE SEQUENCE {self.schema}.{self.signature} {self.definition};"
-
-        from sqlalchemy import text as sql_text
 
         return sql_text(sql)
 
@@ -229,7 +225,6 @@ class PGSequence(ReplaceableEntity):
         if cascade:
             sql += " CASCADE"
         sql += ";"
-        from sqlalchemy import text as sql_text
 
         return sql_text(sql)
 
@@ -250,8 +245,6 @@ class PGSequence(ReplaceableEntity):
         return f"from {module_path} import {class_name}"
 
     def next_value(self):
-        from sqlalchemy import DefaultClause, text
-
         full_name = f"{self.schema}.{self.signature}" if self.schema else self.signature
 
-        return DefaultClause(text(f"nextval('{full_name}')"))
+        return DefaultClause(sql_text(f"nextval('{full_name}')"))
