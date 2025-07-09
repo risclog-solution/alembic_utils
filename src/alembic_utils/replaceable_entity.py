@@ -157,25 +157,22 @@ class ReplaceableEntity:
         self: T, sess: Session, dependencies: Optional[List["ReplaceableEntity"]] = None
     ) -> Optional[ReversibleOp]:
         """Get the migration operation required for autogenerate"""
-        # All entities in the database for self's schema
-        entities_in_database: List[T] = self.from_database(sess, schema=self.schema)
 
+        entities_in_database: List[T] = self.from_database(sess, schema=self.schema)
         db_def = self.get_database_definition(sess, dependencies=dependencies)
 
-        for x in entities_in_database:
+        counterpart = next((x for x in entities_in_database if x.identity == db_def.identity), None)
+        if counterpart:
 
-            if (db_def.identity, normalize_whitespace(db_def.definition)) == (
-                x.identity,
-                normalize_whitespace(x.definition),
+            if normalize_whitespace(db_def.definition) == normalize_whitespace(
+                counterpart.definition
             ):
-                return None
+                return None  # already up to date
 
-            if db_def.identity == x.identity:
-                # Cache the currently live copy to render a RevertOp without hitting DB again
-                self._version_to_replace = x
-                return ReplaceOp(self)
-
-        return CreateOp(self)
+            self._version_to_replace = counterpart
+            return ReplaceOp(self)
+        else:
+            return CreateOp(self)
 
 
 class ReplaceableEntityRegistry:
@@ -248,6 +245,7 @@ def register_entities(
     * **exclude_schemas** - *Optional[List[str]]*: A list of SQL schemas to ignore. Note, explicitly registered entities will still be monitored.
     * **entity_types** - *Optional[List[Type[ReplaceableEntity]]]*: A list of ReplaceableEntity classes to consider during migrations. Other entity types are ignored
     """
+
     registry.register(entities, schemas, exclude_schemas, entity_types)
 
 
@@ -389,8 +387,14 @@ def compare_registered_entities(
 
         # Sort DROP operations: ensure aggregates drop before functions
         DROP_PRIORITY = {
-            "PGAggregate": 0,
-            "PGFunction": 1,
+            "PGExtension": 0,
+            "PGAggregate": 1,
+            "PGSequence": 2,
+            "PGFunction": 3,
+            "PGPolicy": 4,
+            "PGTrigger": 5,
+            "PGGrantTable": 6,
+            "PGView": 7,
         }
 
         def _drop_key(dropop: DropOp):

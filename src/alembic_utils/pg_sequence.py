@@ -1,7 +1,8 @@
 import re
 from typing import Optional
 
-from sqlalchemy import text
+from sqlalchemy import DefaultClause
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 
 from alembic_utils.replaceable_entity import ReplaceableEntity
@@ -33,6 +34,8 @@ class PGSequence(ReplaceableEntity):
             \"\"\"
         )
     """
+
+    _create_counter = 0
 
     def __init__(
         self,
@@ -120,9 +123,12 @@ class PGSequence(ReplaceableEntity):
         WHERE c.relkind = 'S'
           AND n.nspname LIKE :schema
         """
-        rows = list(sess.execute(text(sql), {"schema": schema}).mappings())
+
+        rows = list(sess.execute(sql_text(sql), {"schema": schema}).mappings())
+
         entities = []
         for row in rows:
+
             sql2 = """
             SELECT s.seqtypid::regtype::text as data_type,
                    s.seqstart as start_value,
@@ -138,7 +144,7 @@ class PGSequence(ReplaceableEntity):
             """
             result = (
                 sess.execute(
-                    text(sql2),
+                    sql_text(sql2),
                     {
                         "schema": row["sequence_schema"],
                         "sequence": row["sequence_name"],
@@ -160,7 +166,7 @@ class PGSequence(ReplaceableEntity):
                 """
                 result2 = (
                     sess.execute(
-                        text(sql3),
+                        sql_text(sql3),
                         {
                             "schema": row["sequence_schema"],
                             "sequence": row["sequence_name"],
@@ -205,20 +211,20 @@ class PGSequence(ReplaceableEntity):
                     definition=definition,
                 )
             )
+
         return entities
 
     def to_sql_statement_create(self):
+        self._create_counter += 1
         sql = f"CREATE SEQUENCE {self.schema}.{self.signature} {self.definition};"
-        from sqlalchemy import text as sql_text
 
         return sql_text(sql)
 
     def to_sql_statement_drop(self, cascade=False):
-        sql = f"DROP SEQUENCE IF EXISTS {self.schema}.{self.signature}"
+        sql = f"DROP SEQUENCE IF EXISTS {self.schema}.{self.signature} CASCADE"
         if cascade:
             sql += " CASCADE"
         sql += ";"
-        from sqlalchemy import text as sql_text
 
         return sql_text(sql)
 
@@ -237,3 +243,8 @@ class PGSequence(ReplaceableEntity):
         module_path = cls.__module__
         class_name = cls.__name__
         return f"from {module_path} import {class_name}"
+
+    def next_value(self):
+        full_name = f"{self.schema}.{self.signature}" if self.schema else self.signature
+
+        return DefaultClause(sql_text(f"nextval('{full_name}')"))

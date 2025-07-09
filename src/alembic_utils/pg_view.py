@@ -84,21 +84,33 @@ class PGView(ReplaceableEntity):
 
     @classmethod
     def from_database(cls, sess, schema):
-        """Get a list of all functions defined in the db"""
+        """Get a list of all user-defined views not part of extensions"""
         sql = sql_text(
             f"""
-        select
-            schemaname schema_name,
-            viewname view_name,
-            definition
-        from
-            pg_views
-        where
-            schemaname not in ('pg_catalog', 'information_schema')
-            and schemaname::text like '{schema}';
-        """
+            SELECT
+                schemaname AS schema_name,
+                viewname AS view_name,
+                definition
+            FROM
+                pg_views v
+            WHERE
+                schemaname NOT IN ('pg_catalog', 'information_schema')
+                AND schemaname::text LIKE :schema
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM pg_depend d
+                    JOIN pg_extension e ON e.oid = d.refobjid
+                    WHERE d.objid = (
+                        SELECT c.oid
+                        FROM pg_class c
+                        JOIN pg_namespace n ON n.oid = c.relnamespace
+                        WHERE c.relname = v.viewname
+                        AND n.nspname = v.schemaname
+                    )
+                )
+            """
         )
-        rows = sess.execute(sql).fetchall()
+        rows = sess.execute(sql, {"schema": schema}).fetchall()
         db_views = [cls(x[0], x[1], x[2]) for x in rows]
 
         for view in db_views:
