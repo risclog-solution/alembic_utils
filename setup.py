@@ -4,14 +4,6 @@ import re
 from setuptools import find_packages, setup
 
 
-def get_version(package):
-    """
-    Return package version as listed in `__version__` in `__init__.py`.
-    """
-    with open(os.path.join("src", package, "__init__.py")) as f:
-        return re.search("__version__ = ['\"]([^'\"]+)['\"]", f.read()).group(1)
-
-
 DEV_REQUIRES = [
     "black",
     "pylint",
@@ -25,7 +17,7 @@ DEV_REQUIRES = [
 
 setup(
     name="alembic_utils",
-    version=get_version("alembic_utils"),
+    version="1.0.0.dev0",
     author="Oliver Rice",
     author_email="oliver@oliverrice.com",
     license="MIT",

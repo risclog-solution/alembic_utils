@@ -1,37 +1,6 @@
-[project]
-name = "alembic_utils"
-version = "0.8.8"
-description = "A sqlalchemy/alembic extension for migrating procedures and views"
-requires-python = ">=3.9"
-authors = [
-    {"name" = "Oliver Rice", "email" = "oliver@oliverrice.com"}
-]
-license = "MIT"
-readme = "README.md"
-packages = [{include = "alembic_utils", from = "src"}]
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "License :: OSI Approved :: MIT License",
-    "Intended Audience :: Developers",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: SQL",
-]
-dependencies = [
-    "alembic>=1.9",
-    "flupy",
-    "parse>=1.8.4",
-    "sqlalchemy>=1.4",
-    "typing_extensions>=0.1.0",
-]
-
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=40.6.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [tool.poetry.urls]
 "PyPI" = "https://pypi.org/project/alembic-utils/"
