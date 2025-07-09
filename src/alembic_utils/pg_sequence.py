@@ -34,6 +34,8 @@ class PGSequence(ReplaceableEntity):
         )
     """
 
+    _create_counter = 0
+
     def __init__(
         self,
         schema: str,
@@ -120,9 +122,12 @@ class PGSequence(ReplaceableEntity):
         WHERE c.relkind = 'S'
           AND n.nspname LIKE :schema
         """
+
         rows = list(sess.execute(text(sql), {"schema": schema}).mappings())
+
         entities = []
         for row in rows:
+
             sql2 = """
             SELECT s.seqtypid::regtype::text as data_type,
                    s.seqstart as start_value,
@@ -205,16 +210,22 @@ class PGSequence(ReplaceableEntity):
                     definition=definition,
                 )
             )
+
         return entities
 
     def to_sql_statement_create(self):
+
+        PGSequence._create_counter += 1
+        print(f"[{PGSequence._create_counter}] CREATE SEQUENCE: {self.schema}.{self.signature}")
+
         sql = f"CREATE SEQUENCE {self.schema}.{self.signature} {self.definition};"
+
         from sqlalchemy import text as sql_text
 
         return sql_text(sql)
 
     def to_sql_statement_drop(self, cascade=False):
-        sql = f"DROP SEQUENCE IF EXISTS {self.schema}.{self.signature}"
+        sql = f"DROP SEQUENCE IF EXISTS {self.schema}.{self.signature} CASCADE"
         if cascade:
             sql += " CASCADE"
         sql += ";"
@@ -237,3 +248,10 @@ class PGSequence(ReplaceableEntity):
         module_path = cls.__module__
         class_name = cls.__name__
         return f"from {module_path} import {class_name}"
+
+    def next_value(self):
+        from sqlalchemy import DefaultClause, text
+
+        full_name = f"{self.schema}.{self.signature}" if self.schema else self.signature
+
+        return DefaultClause(text(f"nextval('{full_name}')"))

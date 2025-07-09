@@ -117,4 +117,3 @@ class PGView(ReplaceableEntity):
             assert view is not None
 
         return db_views
-
