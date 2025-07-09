@@ -17,7 +17,7 @@ DEV_REQUIRES = [
 
 setup(
     name="alembic_utils",
-    version="1.0.0.dev0",
+    version="1.0.0+rl0",
     author="Oliver Rice",
     author_email="oliver@oliverrice.com",
     license="MIT",
