@@ -136,9 +136,10 @@ def render_drop_entity(autogen_context, op):
     target = op.target
     autogen_context.imports.add(target.render_import_statement())
     variable_name = target.to_variable_name()
+    cascade_arg = ", cascade=True" if op.cascade else ""
     return (
         target.render_self_for_migration(omit_definition=False)
-        + f"op.drop_entity({variable_name})\n"
+        + f"op.drop_entity({variable_name}{cascade_arg})\n"
     )
 
 
