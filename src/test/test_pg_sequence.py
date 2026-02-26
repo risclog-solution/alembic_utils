@@ -121,11 +121,12 @@ def test_to_sql_statement_drop(simple_seq):
     assert isinstance(stmt, TextClause)
     assert "DROP SEQUENCE" in str(stmt)
     assert "myseq" in str(stmt)
+    assert "CASCADE" not in str(stmt)
 
 
 def test_to_sql_statement_drop_with_cascade(simple_seq):
     stmt = simple_seq.to_sql_statement_drop(cascade=True)
-    assert "CASCADE" in str(stmt)
+    assert str(stmt).count("CASCADE") == 1
 
 
 def test_to_sql_statement_create_or_replace(simple_seq):
@@ -301,14 +302,15 @@ def test_drop_sequences(engine, ensure_public_table):
 
     assert "op.drop_entity" in migration_contents
     assert "PGSequence" in migration_contents
+    assert "cascade=True" in migration_contents
 
     drop_lines = [
         (m.group(), i)
-        for i, m in enumerate(re.finditer(r"op\\.drop_entity\\(([^)]+)\\)", migration_contents))
+        for i, m in enumerate(re.finditer(r"op\.drop_entity\(([^)]+)\)", migration_contents))
     ]
 
     for line, _ in drop_lines:
-        assert "PGSequence" in line
+        assert "cascade=True" in line
 
     run_alembic_command(engine=engine, command="upgrade", command_kwargs={"revision": "head"})
     run_alembic_command(engine=engine, command="downgrade", command_kwargs={"revision": "base"})

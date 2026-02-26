@@ -221,7 +221,7 @@ class PGSequence(ReplaceableEntity):
         return sql_text(sql)
 
     def to_sql_statement_drop(self, cascade=False):
-        sql = f"DROP SEQUENCE IF EXISTS {self.schema}.{self.signature} CASCADE"
+        sql = f"DROP SEQUENCE IF EXISTS {self.schema}.{self.signature}"
         if cascade:
             sql += " CASCADE"
         sql += ";"
